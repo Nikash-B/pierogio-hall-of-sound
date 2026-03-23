@@ -4,7 +4,7 @@ const { subtotal } = require('../../src/subtotal');
 const { discounts } = require('../../src/discounts');
 const { total } = require('../../src/total');
 const { tax } = require('../../src/tax');
-const { delivery } = require('../../src/delivery');
+const { deliveryFee } = require('../../src/delivery');
 
 // These arbitrary generators provide primitive building blocks for constructing orders and contexts in property-based tests
 //
@@ -100,6 +100,46 @@ describe('Property-Based Tests for Orders', () => {
         fc.property(hotOrderArb, deliveryArb, (order, delivery) => {
           const result = tax(order, delivery);
           return result > 0;
+        }),
+        { numRuns: 50 }
+      );
+    });
+
+    // BUG: deliveryFee() charges the base fee once per item instead of once per
+    // order. The loop at delivery.js:60-66 iterates over order.items and adds
+    // 399 or 699 for each item, so a 2-item order pays double delivery.
+    // Property: non-rush delivery fee should never exceed the zone's base fee
+    // (399 for local, 699 for outer) regardless of how many items are in the order.
+    it('delivery fee should not exceed zone base fee for non-rush, non-free orders', () => {
+      // Use small unitPriceCents so the order stays below the free-delivery threshold
+      const cheapItemArb = fc.record({
+        kind: kindArb,
+        sku: skuArb,
+        title: fc.string(),
+        filling: fillingArb,
+        qty: fc.constant(6),
+        unitPriceCents: fc.integer({ min: 100, max: 300 }),
+        addOns: fc.constant([])
+      });
+
+      const smallOrderArb = fc.record({
+        items: fc.array(cheapItemArb, { minLength: 2, maxLength: 5 })
+      });
+
+      const deliveryArb = fc.record({
+        zone: zoneArb,
+        rush: fc.constant(false)
+      });
+
+      const profileArb = fc.record({
+        tier: tierArb
+      });
+
+      fc.assert(
+        fc.property(smallOrderArb, deliveryArb, profileArb, (order, del, profile) => {
+          const result = deliveryFee(order, del, profile);
+          const maxFee = del.zone === 'local' ? 399 : 699;
+          return result <= maxFee;
         }),
         { numRuns: 50 }
       );
