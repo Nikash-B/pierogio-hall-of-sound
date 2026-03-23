@@ -71,16 +71,39 @@ describe('Property-Based Tests for Orders', () => {
     // You can adapt the starter code below.
     // Feel free to copy, paste, and modify as needed multiple times.
     // ---------------------------------------------------------------------------
-    //
-    // it('subtotal should always be non-negative integer', () => {
-    //   fc.assert(
-    //     fc.property(, (order) => { // add the appropriate arbitraries here
-    //       const result = subtotal(order); // change this to the function you are testing
-    //       return result >= 0 && Number.isInteger(result); // add the property you want to verify
-    //     }),
-    //     { numRuns: 50 } // you can adjust the number of runs as needed
-    //   );
-    // });
+
+    // BUG: tax() never calculates tax for hot items. The loop in tax.js only
+    // computes tax inside the `kind === 'frozen'` branch (which has a 0% rate),
+    // while the `kind === 'hot'` branch merely sets a flag and skips the tax
+    // calculation entirely. Hot items should be taxed at 8% per the spec.
+    it('tax on an order with only hot items should be greater than zero', () => {
+      const hotItemArb = fc.record({
+        kind: fc.constant('hot'),
+        sku: skuArb,
+        title: fc.string(),
+        filling: fillingArb,
+        qty: fc.constantFrom(6, 12, 24),
+        unitPriceCents: fc.integer({ min: 500, max: 3000 }),
+        addOns: fc.array(addOnArb, { maxLength: 3 })
+      });
+
+      const hotOrderArb = fc.record({
+        items: fc.array(hotItemArb, { minLength: 1, maxLength: 5 })
+      });
+
+      const deliveryArb = fc.record({
+        zone: zoneArb,
+        rush: fc.boolean()
+      });
+
+      fc.assert(
+        fc.property(hotOrderArb, deliveryArb, (order, delivery) => {
+          const result = tax(order, delivery);
+          return result > 0;
+        }),
+        { numRuns: 50 }
+      );
+    });
 
   });
 });
