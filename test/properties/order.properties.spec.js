@@ -191,5 +191,90 @@ describe('Property-Based Tests for Orders', () => {
       );
     });
 
+    
+    // BUG 1: FIRST10 discount multiplies by -0.10, resulting in negative discount value.
+    // When computing TOTAL = SUBTOTAL - DISCOUNTS, a negative discount becomes addition,
+    // causing the total to INCREASE instead of DECREASE.
+    it('BUG: FIRST10 discount adds to total instead of subtracting', () => {
+      const order = {
+        items: [
+          {
+            kind: 'hot',
+            sku: 'P12-POTATO',
+            title: 'Potato Pierogi 12-pack',
+            filling: 'potato',
+            qty: 12,
+            unitPriceCents: 3000,
+            addOns: []
+          }
+        ]
+      };
+
+      const context = {
+        profile: { tier: 'guest' },
+        delivery: { zone: 'local', rush: false },
+        coupon: 'FIRST10'
+      };
+
+      const orderSubtotal = subtotal(order);
+      const orderDiscounts = discounts(order, context.profile, context.coupon);
+      const totalWithDiscount = total(order, context);
+      const totalWithoutDiscount = total(order, { profile: context.profile, delivery: context.delivery, coupon: null });
+
+      // The discount is negative (because of -0.10 multiplier), so it increases the total
+      expect(orderDiscounts).toBeLessThan(0);
+      expect(totalWithDiscount).toBeGreaterThan(totalWithoutDiscount);
+    });
+
+    // BUG 2: FIRST10 discount is applied without checking minimum order amount.
+    // According to the spec, FIRST10 should only apply to orders $20 or more,
+    // but there is no minimum order check in the applyCoupon function.
+    it('BUG: FIRST10 discount applies to orders under $20', () => {
+      const order = {
+        items: [
+          {
+            kind: 'hot',
+            sku: 'P6-POTATO',
+            title: 'Potato Pierogi 6-pack',
+            filling: 'potato',
+            qty: 6,
+            unitPriceCents: 500, // 6 * 500 = 3000 cents = $30 subtotal
+            addOns: []
+          }
+        ]
+      };
+
+      // Modify to create a small order under $20
+      const smallOrder = {
+        items: [
+          {
+            kind: 'frozen',
+            sku: 'P6-POTATO',
+            title: 'Potato Pierogi 6-pack',
+            filling: 'potato',
+            qty: 6,
+            unitPriceCents: 300, // 6 * 300 = 1800 cents = $18 subtotal (under $20)
+            addOns: []
+          }
+        ]
+      };
+
+      const context = {
+        profile: { tier: 'guest' },
+        delivery: { zone: 'local', rush: false },
+        coupon: 'FIRST10'
+      };
+
+      const orderSubtotal = subtotal(smallOrder);
+      const orderDiscounts = discounts(smallOrder, context.profile, context.coupon);
+
+      // Subtotal is $18 (under $20 threshold)
+      expect(orderSubtotal).toBeLessThan(2000);
+      
+      // Discount is still applied (should be 0 but isn't)
+      // The discount should be 0 for orders under $20, but it's not
+      expect(orderDiscounts).not.toBe(0);
+    });
+
   });
 });
