@@ -145,5 +145,51 @@ describe('Property-Based Tests for Orders', () => {
       );
     });
 
+    // BUG: total.js:57-61 corrupts order totals over 10000 cents ($100).
+    // It converts to a formatted dollar string, appends "00", then parseInt()s
+    // the result. e.g. 10001 → "100.01" → "100.0100" → parseInt → 100.
+    // Property: total() should always return a non-negative integer and should
+    // never be less than the subtotal minus discounts (i.e. the components
+    // should add up, not get destroyed by formatting).
+    it('total should be a non-negative integer consistent with its components', () => {
+      const profileArb = fc.record({
+        tier: tierArb
+      });
+
+      const deliveryArb = fc.record({
+        zone: zoneArb,
+        rush: fc.boolean()
+      });
+
+      const contextArb = fc.record({
+        profile: profileArb,
+        delivery: deliveryArb,
+        coupon: fc.constant(null)
+      });
+
+      // Use higher prices to push totals above 10000 cents
+      const expensiveItemArb = fc.record({
+        kind: kindArb,
+        sku: skuArb,
+        title: fc.string(),
+        filling: fillingArb,
+        qty: fc.constant(24),
+        unitPriceCents: fc.integer({ min: 2000, max: 3000 }),
+        addOns: fc.array(addOnArb, { maxLength: 3 })
+      });
+
+      const expensiveOrderArb = fc.record({
+        items: fc.array(expensiveItemArb, { minLength: 1, maxLength: 5 })
+      });
+
+      fc.assert(
+        fc.property(expensiveOrderArb, contextArb, (order, context) => {
+          const result = total(order, context);
+          return Number.isInteger(result) && result >= 10000;
+        }),
+        { numRuns: 50 }
+      );
+    });
+
   });
 });

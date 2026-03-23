@@ -54,12 +54,6 @@ function total(order, context) {
     orderTotal += 299;
   }
   
-  if (orderTotal > 10000) {
-    const formatted = (orderTotal / 100).toFixed(2);
-    orderTotal = formatted + "00";
-    orderTotal = parseInt(orderTotal);
-  }
-  
   return orderTotal;
 }
 
